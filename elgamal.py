@@ -42,16 +42,28 @@ def genPrime(bit_size):
         if MR(rand):
             return rand
 
+#
+# generate safe prime number p
+# q in P, if 2q+1 in P then 2q+1 is safe prime number
+#
+def genSafePrime(bit_size):
+    while True:
+        p = genPrime(256)
+        if MR((p - 1) / 2):
+            return p
+
 # p is prime number.
 # calculate a^-1 mod p
 def prime_modinv(a, p):
     return pow(a, p - 2, p)
 
 #
-# makeKey (256 bit)
+# key generation
+# public key (q, g, h), private key (x)
 #
-def makeKey():
-    q = genPrime(256)
+def makeKey(bit_size):
+    # if q isn't safe prime number, then this cipher become vulnerable
+    q = genSafePrime(bit_size)
     g = random.randint(1, q - 1)
     x = random.randint(0, q - 1)
     h = pow(g, x, q)
@@ -62,11 +74,22 @@ def makeKey():
 # encrypto
 #
 def encryption(m):
-    q, g, h, x = makeKey()
+    # 256 bit key
+    q, g, h, x = makeKey(256)
     r = random.randint(0, q - 1)
     c1 = pow(g, r, q)
     c2 = ((m % q) * pow(h, r, q)) % q
     return c1, c2, x, q
+
+#
+# print Usage
+#
+def usage():
+    print(" Usage: python elgamal.py [option]")
+    print(" [option]")
+    print("  -c : encrypt")
+    print("  -d : decrypt")
+    print("  -a : attack and get private key")
 
 #
 # decrypto
@@ -77,15 +100,21 @@ def decryption(c1, c2, x, q):
     return m
 
 if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        usage()
+        sys.exit()
+
     if sys.argv[1] == "-c":
+        # encryption
         m = int(input("m: "))
         c1, c2, x, q = encryption(m)
-
         print("c1 = {}".format(c1))
         print("c2 = {}".format(c2))
         print("x = {}".format(x))
         print("q = {}".format(q))
+
     elif sys.argv[1] == "-d":
+        # decryption
         c1 = int(input("c1: "))
         c2 = int(input("c2: "))
         x = int(input("x: "))
@@ -93,3 +122,6 @@ if __name__ == "__main__":
 
         m = decryption(c1, c2, x, q)
         print("m = {}".format(m))
+
+    else:
+        usage()
