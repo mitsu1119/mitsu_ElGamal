@@ -1,6 +1,7 @@
 # Coding: utf-8
 import sys
 import random
+from functools import reduce
 
 #
 # Miller-Rabin test
@@ -48,9 +49,34 @@ def genPrime(bit_size):
 #
 def genSafePrime(bit_size):
     while True:
-        p = genPrime(256)
+        p = genPrime(bit_size)
         if MR((p - 1) / 2):
             return p
+
+#
+# extended gcd
+#
+def egcd(a, b):
+    if b > 0:
+        y, x, d = egcd(b, a % b)
+        return x, y - a // b * x, d
+    else:
+        return 1, 0, a
+
+#
+# Chinese Remainder Theorem and solver
+# solve Simultaneous congruences
+# x = a1 mod m1, x = a2 mod m2, x = a3 mod m3 ...
+#
+def chineseRemainder(a, m):
+    P = reduce(lambda x, y: x * y, a)
+    res = 0
+    for i in range(len(m)):
+        x, y, d = egcd(a[i], P // a[i])
+        res += y * P // a[i] * m[i]
+        # print("Chinese: {}".format(res))
+    return res % P
+
 
 # p is prime number.
 # calculate a^-1 mod p
@@ -58,11 +84,66 @@ def prime_modinv(a, p):
     return pow(a, p - 2, p)
 
 #
+# calc φ(p), p in P
+# φ(n) is Euler's totient function
+#
+def prime_phip(p):
+    return p - 1
+
+#
+# Baby-step Giant-step algorithm
+# solve Discrete logarithm problem(g^x = y mod p)
+# let x be im+j (m = ceiling(root(p)), 0 <= i,j <= m)
+# g^j = y(g^-m)^i modp
+# brute force i, j
+#
+def BsGs(g, y, p, q):
+    m = int(q ** 0.5 + 1)
+
+    # Baby-step
+    bs = {}
+    gj = 1
+    for j in range(m):
+        bs[gj] = j
+        gj = (gj * g) % p
+
+    # Giant-step
+    gm = pow(prime_modinv(g, p), m, p)
+    Y = y
+    for i in range(m):
+        if Y in bs:
+            x = i * m + bs[Y]
+            print("Found candidate: {}".format(x))
+            return x
+        else:
+            Y = (Y * gm) % p
+    print("Not found private key x ...")
+    return - 1
+
+#
+# Pohling-Hellman algorithm
+# break down complex Discrete logarithm problem into simple problems
+# g^x = y mod p
+#
+def PH(p, g, y, phip_factors):
+    bn = []
+    for pk in phip_factors:
+        phippk = prime_phip(p) // pk
+        bk = BsGs(pow(g, phippk, p), pow(y, phippk, p), p, pk)
+        bn.append(bk)
+
+    print("bn: {}".format(bn))
+    x = chineseRemainder(phip_factors, bn)
+    return x
+
+
+#
 # key generation
 # public key (q, g, h), private key (x)
 #
 def makeKey(bit_size):
-    # if q isn't safe prime number, then this cipher become vulnerable
+    # if q isn't safe prime number, then this cipher becomes vulnerable
+    # q = genSafePrime(bit_size)
     q = genSafePrime(bit_size)
     g = random.randint(1, q - 1)
     x = random.randint(0, q - 1)
@@ -74,12 +155,29 @@ def makeKey(bit_size):
 # encrypto
 #
 def encryption(m):
-    # 256 bit key
-    q, g, h, x = makeKey(256)
+    # 128 bit key
+    q, g, h, x = makeKey(128)
     r = random.randint(0, q - 1)
     c1 = pow(g, r, q)
     c2 = ((m % q) * pow(h, r, q)) % q
     return c1, c2, x, q
+
+#
+# decrypto
+#
+def decryption(c1, c2, x, q):
+    # (c2 * (c1^x)^-1) mod q
+    m = ((c2 % q) * pow(c1, x * (q - 2), q)) % q
+    return m
+
+#
+# attack
+#
+def attack(c1, c2, q, g, h, phip):
+    x = PH(q, g, h, phip)
+    print("x: {}".format(x))
+    m = decryption(c1, c2, x, q)
+    return m
 
 #
 # print Usage
@@ -90,14 +188,6 @@ def usage():
     print("  -c : encrypt")
     print("  -d : decrypt")
     print("  -a : attack and get private key")
-
-#
-# decrypto
-#
-def decryption(c1, c2, x, q):
-    # (c2 * (c1^x)^-1) mod q
-    m = ((c2 % q) * pow(c1, x * (q - 2), q)) % q
-    return m
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
@@ -112,6 +202,8 @@ if __name__ == "__main__":
         print("c2 = {}".format(c2))
         print("x = {}".format(x))
         print("q = {}".format(q))
+        print("g = {}".format(g))
+        print("h = {}".format(h))
 
     elif sys.argv[1] == "-d":
         # decryption
@@ -121,6 +213,27 @@ if __name__ == "__main__":
         q = int(input("q: "))
 
         m = decryption(c1, c2, x, q)
+        print("m = {}".format(m))
+
+    elif sys.argv[1] == "-a":
+        # attack and get private key
+        g = int(input("g: "))
+        h = int(input("h: "))
+        q = int(input("q: "))
+        c1 = int(input("c1: "))
+        c2 = int(input("c2: "))
+
+        # φ(p) factors
+        phip = []
+        cnt = 1
+        print("input -1 to stop")
+        while True:
+            pp = int(input("φ(p) factor{}: ".format(cnt)))
+            if pp == -1:
+                break
+            phip.append(pp)
+            cnt += 1
+        m = attack(c1, c2, q, g, h, phip)
         print("m = {}".format(m))
 
     else:
